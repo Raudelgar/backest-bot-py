@@ -23,8 +23,6 @@ def fetch_data(symbol: str, timeframe: str, date_from, date_to, max_retries=3) -
             if bars.empty:
                 raise ValueError(f"No data returned for {symbol} {timeframe}.")
 
-            # bars = bars.rename(columns={'timestamp': 'time'})
-            # bars['time'] = pd.to_datetime(bars['time'], utc=True)
             bars = bars.rename(columns={'timestamp': 'close_time'})
             bars['close_time'] = pd.to_datetime(bars['close_time'], utc=True)
 

@@ -1,15 +1,12 @@
 from datetime import datetime, timedelta, timezone
 
-# STOCKS = ["SPY", "QQQ", "XLK", "XLF", "XLP", "TLT", "AAPL", "AMZN", "MSFT", "GOOG"]
-STOCKS = ["QQQ"]
-TIMEFRAMES = ["30Min"]
-# TIMEFRAMES = ["5Min", "15Min", "30Min", "1Hour", "2Hour", "4Hour"]
-# TIMEFRAMES = ["1Hour", "1Day"]  # <- Adjusted for free tier
+STOCKS = ["SPY", "QQQ", "XLK", "XLF", "XLP", "TLT", "AAPL", "AMZN", "MSFT", "GOOG"]
+TIMEFRAMES = ["5Min", "15Min", "30Min", "1Hour", "2Hour", "4Hour"]
 
 # Capital allocation mode: "furious", "conservative", or "vacation"
 MODE = "furious"
 
-RSI_SHORT_ENTRY = 80  # for SHORT trades
+RSI_SHORT_ENTRY = None  # for SHORT trades
 ENABLE_SHORT = True   # flag to enable/disable SHORT logic
 
 

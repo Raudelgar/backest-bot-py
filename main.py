@@ -5,7 +5,6 @@ from pandas_market_calendars import get_calendar
 from rich.console import Console
 from rich.table import Table
 from tqdm import tqdm
-# from config import STOCKS, TIMEFRAMES, STOP_MULTIPLIER, LIMIT_MULTIPLIERS, RSI_MID, DATE_FROM, DATE_TO, EQUITY, USE_SESSION, MODE
 from config import (
     STOCKS, TIMEFRAMES, STOP_MULTIPLIER, LIMIT_MULTIPLIERS, RSI_MID,
     DATE_FROM, DATE_TO, EQUITY, USE_SESSION, MODE,
@@ -15,6 +14,9 @@ from config import (
 from data.fetcher import fetch_data
 from strategies.rsi2_mean_rev import prepare_data
 from core.backtester import run_backtest
+from generate_alert import generate_alerts
+from core.slack_notifier import send_slack_alert
+import json
 
 # ──────────────────────────────
 # Logging Setup
@@ -26,6 +28,7 @@ logging.basicConfig(
 logger = logging.getLogger()
 console = Console()
 
+# python main.py
 def get_allocation(symbol_rank: int, total_symbols: int, equity: float) -> float:
     if MODE == "vacation":
         return equity  # Use 100% equity in one trade
@@ -59,7 +62,7 @@ def main():
             if bars is None or bars.empty:
               raise ValueError("No data returned for backtest.")
             df = prepare_data(bars)
-            pnl, max_dd, trades, gross_profit, gross_loss = run_backtest(
+            backtest_result = run_backtest(
                 df=df,
                 rsi_entry=rsi_mid,
                 stop_mult=stop_mult,
@@ -68,14 +71,19 @@ def main():
                 use_session=USE_SESSION,
                 capital=capital,
                 enable_short=ENABLE_SHORT,
-                rsi_short_entry=RSI_SHORT_ENTRY,
+                # rsi_short_entry=RSI_SHORT_ENTRY,
             )
-
+            pnl, max_dd, trades, gross_profit, gross_loss = backtest_result
             pf = gross_profit / max(1e-6, gross_loss)
             risk_adjusted_pnl = pnl / max(1e-6, max_dd)
 
             if pf >= 2 and len(trades) >= 10:
-                results.append((symbol, tf, limit_mult, stop_mult, rsi_mid, pnl, max_dd, len(trades), pf, risk_adjusted_pnl))
+                results.append((
+                  symbol, tf, limit_mult, stop_mult, rsi_mid,
+                  pnl, max_dd, len(trades), pf, risk_adjusted_pnl,
+                  capital,  # allocation (may be recomputed later)
+                  trades, gross_profit, gross_loss
+                ))
         except Exception as e:
             msg = f"Error with {symbol} {tf} x{limit_mult} => {e}"
             console.print(f"[red]{msg}[/red]")
@@ -156,6 +164,64 @@ def main():
 
     with open("trade_log.csv", "w") as f:
         f.write("Entry Time,Exit Time,Size,PNL\n")
+
+    # Only run alerts for top result (single-symbol test)
+    # if len(final_results) == 1:
+    #     best = final_results[0]
+    #     symbol, timeframe = best[0], best[1]
+    #     trades = best[11]
+    #     gross_profit = best[12]
+    #     gross_loss = best[13]
+    #     pnl = best[5]
+    #     max_dd = best[6]
+
+    #     alert_results = [(
+    #         pnl,
+    #         max_dd,
+    #         trades,
+    #         gross_profit,
+    #         gross_loss
+    #     )]
+
+    #     generate_alerts(symbol, timeframe, alert_results, mode=MODE.lower())
+
+    #     # Slack Alerts
+    #     with open("alerts.json") as f:
+    #       alerts = json.load(f)
+
+    #     for alert in alerts:
+    #         send_slack_alert(alert)
+    # Run alerts for top 5 ranked symbols
+    for best in final_results[:5]:
+        symbol,
+        timeframe = best[0],
+        best[1]
+        trades = best[11]
+        gross_profit = best[12]
+        gross_loss = best[13]
+        pnl = best[5]
+        max_dd = best[6]
+        stop_mult = best[3]
+        limit_mult = best[2]
+
+        alert_results = [(
+            pnl,
+            max_dd,
+            trades,
+            gross_profit,
+            gross_loss
+        )]
+
+        generate_alerts(symbol, timeframe, alert_results, stop_mult=stop_mult, limit_mult=limit_mult, mode=MODE.lower())
+
+        # Send Slack Alert
+        with open("alerts.json") as f:
+            alerts = json.load(f)
+            for alert in alerts:
+                if alert["symbol"] == symbol and alert["timeframe"] == timeframe:
+                    send_slack_alert(alert)
+
+
 
 
 if __name__ == "__main__":

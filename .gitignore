@@ -75,4 +75,6 @@ env/
 
 # Data/output files
 trade_log.csv
+trades_long.csv
+trades_short.csv
 backtest.log

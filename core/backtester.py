@@ -1,114 +1,143 @@
 import pandas as pd
 import numpy as np
-from typing import List, Tuple
+from datetime import datetime
 
 def run_backtest(
     df: pd.DataFrame,
-    rsi_entry: float,
+    rsi_entry: int,
     stop_mult: float,
     limit_mult: float,
     equity: float,
     use_session: bool = True,
-    capital: float = 0.0
-) -> Tuple[float, float, List[Tuple[pd.Timestamp, float, float]], float, float]:
-    pnl = 0.0
-    peak = 0.0
-    max_dd = 0.0
-    in_position = False
-    is_short = False
-    entry = stop = limit = np.nan
+    capital: float = 0.0,
+    enable_short: bool = True
+):
+    position = None  # None, 'long', or 'short'
+    entry_price = 0
+    stop_price = 0
+    limit_price = 0
+    entry_time = None
+    max_drawdown = 0
     position_size = 0
+
     trades = []
+    gross_profit = 0
+    gross_loss = 0
+    running_pnl = 0
+    peak_equity = capital
 
-    gross_profit = 0.0
-    gross_loss = 0.0
-
-    for _, bar in df.iterrows():
-        hh = bar['close_time'].tz_convert("America/New_York").hour
+    for i in range(1, len(df)):
+        row = df.iloc[i]
+        hh = row['close_time'].tz_convert("America/New_York").hour
         in_sess = (not use_session) or (14 <= hh < 22)
 
-        go_long = (bar['rsi'] < rsi_entry) and (bar['close'] > bar['sma100']) and in_sess
-        go_short = (bar['rsi'] > (100 - rsi_entry)) and (bar['close'] < bar['sma100']) and in_sess
+        go_long = (row['rsi'] < rsi_entry) and (row['close'] > row['sma100']) and in_sess
+        go_short = (row['rsi'] > (100 - rsi_entry)) and (row['close'] < row['sma100']) and in_sess
 
-        # Resolve conflict if both LONG and SHORT fire
         if go_long and go_short:
-            long_strength = rsi_entry - bar['rsi']
-            short_strength = bar['rsi'] - (100 - rsi_entry)
+            long_strength = rsi_entry - row['rsi']
+            short_strength = row['rsi'] - (100 - rsi_entry)
             go_long = long_strength > short_strength
             go_short = not go_long
 
-        # Enter new position if flat
-        if not in_position:
+        # ENTRY
+        if position is None:
             if go_long:
-                in_position = True
-                is_short = False
-                entry = bar['close']
-                position_size = capital / entry
-                stop = entry - stop_mult * bar['atr14']
-                limit = entry + limit_mult * bar['atr14']
-                continue
-            elif go_short:
-                in_position = True
-                is_short = True
-                entry = bar['close']
-                position_size = capital / entry
-                stop = entry + stop_mult * bar['atr14']
-                limit = entry - limit_mult * bar['atr14']
-                continue
-
-        # Exit condition
-        if in_position:
-            hit_stop = bar['high'] >= stop if is_short else bar['low'] <= stop
-            hit_limit = bar['low'] <= limit if is_short else bar['high'] >= limit
-
-            if hit_stop and hit_limit:
-                exit_px = stop
-            elif hit_stop:
-                exit_px = stop
-            elif hit_limit:
-                exit_px = limit
+                position = 'long'
+                entry_price = row['close']
+                position_size = capital / entry_price
+                stop_price = entry_price - stop_mult * row['atr']
+                limit_price = entry_price + limit_mult * row['atr']
+                entry_time = row['close_time']
+            elif enable_short and go_short:
+                position = 'short'
+                entry_price = row['close']
+                position_size = capital / entry_price
+                stop_price = entry_price + stop_mult * row['atr']
+                limit_price = entry_price - limit_mult * row['atr']
+                entry_time = row['close_time']
             else:
-                exit_px = bar['close']
+                continue
 
-            # On exit
-            direction = -1 if is_short else 1
-            trade_pnl = direction * (exit_px - entry) * position_size
-            pnl += trade_pnl
-            trades.append((bar['close_time'], entry, exit_px))
-
-            if trade_pnl > 0:
-                gross_profit += trade_pnl
+        # EXIT
+        elif position == 'long':
+            if row['low'] <= stop_price:
+                exit_price = stop_price
+            elif row['high'] >= limit_price:
+                exit_price = limit_price
             else:
-                gross_loss += abs(trade_pnl)
+                continue
 
-            in_position = False
+            exit_time = row['close_time']
+            pnl = (exit_price - entry_price) * position_size
+            running_pnl += pnl
+            gross_profit += pnl if pnl > 0 else 0
+            gross_loss += abs(pnl) if pnl < 0 else 0
+            trades.append((entry_time, exit_time, entry_price, capital, pnl, "long"))
+            position = None
 
-            # 🌀 Ride the wave — check for new signal on same bar
-            go_long = (bar['rsi'] < rsi_entry) and (bar['close'] > bar['sma100']) and in_sess
-            go_short = (bar['rsi'] > (100 - rsi_entry)) and (bar['close'] < bar['sma100']) and in_sess
-
+            # Re-evaluate entry after exit
+            go_long = (row['rsi'] < rsi_entry) and (row['close'] > row['sma100']) and in_sess
+            go_short = (row['rsi'] > (100 - rsi_entry)) and (row['close'] < row['sma100']) and in_sess
             if go_long and go_short:
-                long_strength = rsi_entry - bar['rsi']
-                short_strength = bar['rsi'] - (100 - rsi_entry)
+                long_strength = rsi_entry - row['rsi']
+                short_strength = row['rsi'] - (100 - rsi_entry)
+                go_long = long_strength > short_strength
+                go_short = not go_long
+
+            if go_short and enable_short:
+                position = 'short'
+                entry_price = row['close']
+                position_size = capital / entry_price
+                stop_price = entry_price + stop_mult * row['atr']
+                limit_price = entry_price - limit_mult * row['atr']
+                entry_time = row['close_time']
+
+        elif position == 'short':
+            if row['high'] >= stop_price:
+                exit_price = stop_price
+            elif row['low'] <= limit_price:
+                exit_price = limit_price
+            else:
+                continue
+
+            exit_time = row['close_time']
+            pnl = (entry_price - exit_price) * position_size
+            running_pnl += pnl
+            gross_profit += pnl if pnl > 0 else 0
+            gross_loss += abs(pnl) if pnl < 0 else 0
+            trades.append((entry_time, exit_time, entry_price, capital, pnl, "short"))
+            position = None
+
+            # Re-evaluate entry after exit
+            go_long = (row['rsi'] < rsi_entry) and (row['close'] > row['sma100']) and in_sess
+            go_short = (row['rsi'] > (100 - rsi_entry)) and (row['close'] < row['sma100']) and in_sess
+            if go_long and go_short:
+                long_strength = rsi_entry - row['rsi']
+                short_strength = row['rsi'] - (100 - rsi_entry)
                 go_long = long_strength > short_strength
                 go_short = not go_long
 
             if go_long:
-                in_position = True
-                is_short = False
-                entry = bar['close']
-                position_size = capital / entry
-                stop = entry - stop_mult * bar['atr14']
-                limit = entry + limit_mult * bar['atr14']
-            elif go_short:
-                in_position = True
-                is_short = True
-                entry = bar['close']
-                position_size = capital / entry
-                stop = entry + stop_mult * bar['atr14']
-                limit = entry - limit_mult * bar['atr14']
+                position = 'long'
+                entry_price = row['close']
+                position_size = capital / entry_price
+                stop_price = entry_price - stop_mult * row['atr']
+                limit_price = entry_price + limit_mult * row['atr']
+                entry_time = row['close_time']
 
-        peak = max(peak, pnl)
-        max_dd = max(max_dd, peak - pnl)
+        # DRAWDOWN
+        current_equity = capital + running_pnl
+        peak_equity = max(peak_equity, current_equity)
+        drawdown = peak_equity - current_equity
+        max_drawdown = max(max_drawdown, drawdown)
 
-    return pnl, max_dd, trades, gross_profit, gross_loss
+    # LOG TRADES
+    with open("trades_long.csv", "a") as f_long, open("trades_short.csv", "a") as f_short:
+        for entry_time, exit_time, entry_price, cap, pnl, side in trades:
+            if side == "long":
+                f_long.write(f"{entry_time},{exit_time},{cap:.2f},{pnl:.2f}\n")
+            else:
+                f_short.write(f"{entry_time},{exit_time},{cap:.2f},{pnl:.2f}\n")
+
+    return running_pnl, max_drawdown, trades, gross_profit, gross_loss

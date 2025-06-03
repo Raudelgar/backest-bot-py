@@ -8,7 +8,7 @@ def prepare_data(df: pd.DataFrame) -> pd.DataFrame:
 
     df["rsi"] = 100 - 100 / (1 + up.rolling(2).sum() / down.rolling(2).sum().replace(0, np.nan))
     df["sma100"] = df["close"].rolling(100).mean()
-    df["atr14"] = (
+    df["atr"] = (
         np.maximum(
             abs(df["high"] - df["low"]),
             abs(df["high"] - df["close"].shift()),
@@ -16,4 +16,4 @@ def prepare_data(df: pd.DataFrame) -> pd.DataFrame:
         ).rolling(14).mean()
     )
 
-    return df.dropna(subset=["rsi", "sma100", "atr14"]).reset_index(drop=True)
+    return df.dropna(subset=["rsi", "sma100", "atr"]).reset_index(drop=True)
