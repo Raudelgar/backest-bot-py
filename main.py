@@ -165,46 +165,18 @@ def main():
     with open("trade_log.csv", "w") as f:
         f.write("Entry Time,Exit Time,Size,PNL\n")
 
-    # Only run alerts for top result (single-symbol test)
-    # if len(final_results) == 1:
-    #     best = final_results[0]
-    #     symbol, timeframe = best[0], best[1]
-    #     trades = best[11]
-    #     gross_profit = best[12]
-    #     gross_loss = best[13]
-    #     pnl = best[5]
-    #     max_dd = best[6]
-
-    #     alert_results = [(
-    #         pnl,
-    #         max_dd,
-    #         trades,
-    #         gross_profit,
-    #         gross_loss
-    #     )]
-
-    #     generate_alerts(symbol, timeframe, alert_results, mode=MODE.lower())
-
-    #     # Slack Alerts
-    #     with open("alerts.json") as f:
-    #       alerts = json.load(f)
-
-    #     for alert in alerts:
-    #         send_slack_alert(alert)
     # Run alerts for top 5 ranked symbols
-    for best in final_results[:5]:
-        symbol,
-        timeframe = best[0],
-        best[1]
-        trades = best[11]
-        gross_profit = best[12]
-        gross_loss = best[13]
-        pnl = best[5]
-        max_dd = best[6]
-        stop_mult = best[3]
-        limit_mult = best[2]
+    all_alerts = []
 
-        alert_results = [(
+    for result in final_results[:5]:
+        symbol, timeframe = result[0], result[1]
+        trades = result[11]
+        gross_profit = result[12]
+        gross_loss = result[13]
+        pnl = result[5]
+        max_dd = result[6]
+
+        alert_result = [(
             pnl,
             max_dd,
             trades,
@@ -212,16 +184,18 @@ def main():
             gross_loss
         )]
 
-        generate_alerts(symbol, timeframe, alert_results, stop_mult=stop_mult, limit_mult=limit_mult, mode=MODE.lower())
+        alerts = generate_alerts(symbol, timeframe, alert_result, mode=MODE.lower(), stop_mult=result[3], limit_mult=result[2])
+        all_alerts.extend(alerts)
 
-        # Send Slack Alert
-        with open("alerts.json") as f:
-            alerts = json.load(f)
-            for alert in alerts:
-                if alert["symbol"] == symbol and alert["timeframe"] == timeframe:
-                    send_slack_alert(alert)
+    # Save all alerts to alerts.json
+    with open("alerts.json", "w") as f:
+        json.dump(all_alerts, f, indent=2)
 
+    console.print(f"\n✅ Saved {len(all_alerts)} alert(s) to alerts.json")
 
+    # Send Slack alerts
+    for alert in all_alerts:
+        send_slack_alert(alert)
 
 
 if __name__ == "__main__":

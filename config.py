@@ -1,7 +1,11 @@
 from datetime import datetime, timedelta, timezone
 
-STOCKS = ["SPY", "QQQ", "XLK", "XLF", "XLP", "TLT", "AAPL", "AMZN", "MSFT", "GOOG"]
+# STOCKS = ["SPY", "QQQ", "XLK", "XLF", "XLP", "TLT", "AAPL", "AMZN", "MSFT", "GOOG"]
+STOCKS = ["QQQ", "SPY", "TSLA", "AAPL", "NVDA"]
+# STOCKS = ["QQQ"]
+
 TIMEFRAMES = ["5Min", "15Min", "30Min", "1Hour", "2Hour", "4Hour"]
+# TIMEFRAMES = ["30Min"]
 
 # Capital allocation mode: "furious", "conservative", or "vacation"
 MODE = "furious"
